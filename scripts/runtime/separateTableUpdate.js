@@ -98,6 +98,15 @@ export async function TableTwoStepSummary(mode) {
     // 旧代码在弹窗“取消”分支与 manualSummaryChat 成功路径引用了不存在的变量，会抛 ReferenceError。
     const currentPiece = todoPiece;
     const swipeUid = getSwipeUid(currentPiece);
+
+    // 自动模式下，同一条消息的同一 swipe 成功填表后只执行一次。
+    // reloadCurrentChat() 或其他插件再次触发 CHARACTER_MESSAGE_RENDERED 时直接跳过；
+    // manual 模式明确绕过去重，保留用户主动“立即填表/重跑”的能力。
+    if (mode !== "manual" && currentPiece.two_step_waiting?.[swipeUid] === false) {
+        console.log('[Memory Enhancement] 当前 swipe 已完成独立填表，忽略重复自动触发:', swipeUid);
+        return;
+    }
+
     const todoChats = todoPiece.mes;
 
     console.log('待填表的对话片段:', todoChats);
@@ -209,6 +218,13 @@ export async function manualSummaryChat(todoChats, confirmResult, swipeUid = '')
             chat.two_step_links[chatSwipeUid].push(swipeUid);   // 标记已执行的两步总结
         });
         toBeExecuted = [];
+
+        // 只有成功完成后才将当前 swipe 持久标记为“已处理”。
+        // 失败/取消不会写入 false，因此仍允许后续自动重试；手动模式始终绕过去重。
+        if (swipeUid) {
+            InitChatForTableTwoStepSummary(referencePiece);
+            referencePiece.two_step_waiting[swipeUid] = false;
+        }
 
         // 保存并刷新UI
         await USER.saveChat();
